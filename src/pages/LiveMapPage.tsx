@@ -1,8 +1,7 @@
+import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import Map, { Marker, Popup } from 'react-map-gl/mapbox'
-
-type IncidentStatus = 'active' | 'expiring' | 'cleared'
-type IncidentType = 'breakdown' | 'congestion' | 'accident'
+import { fetchIncidents, type IncidentRow, type IncidentStatus, type IncidentType } from '../api/incidents'
 
 type Incident = {
   id: string
@@ -11,59 +10,35 @@ type Incident = {
   status: IncidentStatus
   type: IncidentType
   location: string
+  description: string
+  delayMinutes: number
+  rawMessage: string
+  photoUrl: string | null
 }
 
-const MOCK_INCIDENTS: Incident[] = [
-  {
-    id: '1',
-    lat: 17.4448,
-    lng: 78.3498,
-    status: 'active',
-    type: 'breakdown',
-    location: 'Wipro Junction',
-  },
-  {
-    id: '2',
-    lat: 17.4477,
-    lng: 78.3805,
-    status: 'expiring',
-    type: 'congestion',
-    location: 'Hitech City Signal',
-  },
-  {
-    id: '3',
-    lat: 17.4258,
-    lng: 78.3631,
-    status: 'active',
-    type: 'accident',
-    location: 'Raidurg Flyover',
-  },
-  {
-    id: '4',
-    lat: 17.4401,
-    lng: 78.3489,
-    status: 'cleared',
-    type: 'breakdown',
-    location: 'Gachibowli Circle',
-  },
+type LiveFilterType = 'all' | IncidentType
+
+const FILTER_OPTIONS: Array<{ key: LiveFilterType; label: string; icon: string }> = [
+  { key: 'all', label: 'All Incidents', icon: 'emergency' },
+  { key: 'accident', label: 'Accidents', icon: 'car_crash' },
+  { key: 'congestion', label: 'Congestion', icon: 'traffic' },
 ]
 
-const INCIDENT_DETAILS: Record<IncidentType, { summary: string; delay: string; tag: string }> = {
-  accident: {
-    summary: 'Multi-vehicle collision. Emergency response active.',
-    delay: '~45 min delay',
-    tag: 'Collision',
-  },
-  congestion: {
-    summary: 'Severe queue build-up on the corridor. Flow control in effect.',
-    delay: '~25 min delay',
-    tag: 'Congestion',
-  },
-  breakdown: {
-    summary: 'Vehicle breakdown reported. Partial lane obstruction.',
-    delay: '~15 min delay',
-    tag: 'Breakdown',
-  },
+const NO_SELECTION = '__none__'
+
+function mapIncident(row: IncidentRow): Incident {
+  return {
+    id: row.id,
+    lat: row.lat,
+    lng: row.lng,
+    status: row.status,
+    type: row.incident_type,
+    location: row.location_name,
+    description: row.clean_message,
+    delayMinutes: row.estimated_minutes,
+    rawMessage: row.raw_message,
+    photoUrl: row.photo_url,
+  }
 }
 
 function getStatusClasses(status: IncidentStatus) {
@@ -102,10 +77,23 @@ function getTypeColor(type: IncidentType) {
   return 'text-color-blue-dark'
 }
 
+function getTypeTag(type: IncidentType) {
+  if (type === 'accident') return 'Collision'
+  if (type === 'congestion') return 'Congestion'
+  if (type === 'roadwork') return 'Roadwork'
+  if (type === 'other') return 'Incident'
+  return 'Breakdown'
+}
+
+function formatDelay(minutes: number) {
+  return `~${minutes} min delay`
+}
+
 export default function LiveMapPage() {
   const token = import.meta.env.VITE_MAPBOX_TOKEN
-  const [selectedIncident, setSelectedIncident] = useState<Incident | null>(MOCK_INCIDENTS[0])
   const mapStyle = 'mapbox://styles/mapbox/navigation-day-v1'
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null)
+  const [activeFilter, setActiveFilter] = useState<LiveFilterType>('all')
 
   const panelCardClass = 'live-orange-panel-glass'
   const statsCardClass = 'live-blue-stats-card'
@@ -121,13 +109,39 @@ export default function LiveMapPage() {
   const chipIconInactiveClass = 'text-[#0071e3]'
   const popupCardClass = 'live-blue-glass-card'
 
+  const { data: incidents = [], isLoading, isError } = useQuery({
+    queryKey: ['incidents', 'live'],
+    queryFn: () => fetchIncidents({ status: 'active,expiring', today: 'true' }),
+    refetchInterval: 30_000,
+    staleTime: 20_000,
+    select: (response) => (response.data ?? []).map(mapIncident),
+  })
+
+  const visibleIncidents = useMemo(() => {
+    if (activeFilter === 'all') return incidents
+    return incidents.filter((incident) => incident.type === activeFilter)
+  }, [activeFilter, incidents])
+
   const activeCount = useMemo(
-    () => MOCK_INCIDENTS.filter((incident) => incident.status === 'active').length,
-    [],
+    () => incidents.filter((incident) => incident.status === 'active').length,
+    [incidents],
   )
 
+  const selectedIncident = useMemo(() => {
+    if (!visibleIncidents.length) return null
+
+    if (selectedIncidentId === NO_SELECTION) return null
+
+    if (selectedIncidentId) {
+      const matched = visibleIncidents.find((incident) => incident.id === selectedIncidentId)
+      if (matched) return matched
+    }
+
+    return visibleIncidents[0] ?? null
+  }, [selectedIncidentId, visibleIncidents])
+
   const handleMapClick = () => {
-    setSelectedIncident(null)
+    setSelectedIncidentId(NO_SELECTION)
   }
 
   if (!token) {
@@ -141,8 +155,8 @@ export default function LiveMapPage() {
   }
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-bg-primary font-body text-body">
-      <div className="absolute inset-0 z-0">
+    <div className="relative mt-16 min-h-[calc(100dvh-4rem)] bg-bg-primary font-body text-body md:mt-0 md:h-screen md:w-screen md:overflow-hidden">
+      <div className="relative z-0 h-[55dvh] min-h-[320px] md:absolute md:inset-0 md:h-full">
         <Map
           mapboxAccessToken={token}
           initialViewState={{
@@ -155,7 +169,7 @@ export default function LiveMapPage() {
           style={{ width: '100%', height: '100%' }}
           attributionControl={false}
         >
-          {MOCK_INCIDENTS.map((incident) => {
+          {visibleIncidents.map((incident) => {
             const statusClasses = getStatusClasses(incident.status)
             return (
               <Marker
@@ -170,7 +184,7 @@ export default function LiveMapPage() {
                   className={`h-7 w-7 rounded-full border-2 border-white transition-transform hover:scale-105 ${statusClasses.pin}`}
                   onClick={(event) => {
                     event.stopPropagation()
-                    setSelectedIncident(incident)
+                    setSelectedIncidentId(incident.id)
                   }}
                 />
               </Marker>
@@ -190,15 +204,19 @@ export default function LiveMapPage() {
             >
               <div className={`w-[280px] overflow-hidden ${popupCardClass}`}>
                 <div className="relative h-28 w-full border-b border-black/10">
-                  <img
-                    alt="Incident snapshot"
-                    className="h-full w-full object-cover"
-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuDO3_aACL4Nuz9DLdpbpbQffr_MJbZpGqU6Pae9KThs6mZj3a953Esy41wFc_qXu4EZ8ZgiToUgTAFunZX4A4nIRXUi5Sl6QNmpP0myBvd2-jsAisZ_MCqZfxM0c7sOB8Rc2Ky1S_QE4R6MurzRBB26YZdiTA12dkLJcV0qC45u1PxHVnZys5UWEs-HgQTxy8jndDTr5lVBsMsVMov3o-TgEuzG12MF9K5wRWVOOfrmCj0KfbF_KSzPMx20aWOxqIFOTy8mmHQs8v9x"
-                  />
+                  {selectedIncident.photoUrl ? (
+                    <img
+                      alt="Incident snapshot"
+                      className="h-full w-full object-cover"
+                      src={selectedIncident.photoUrl}
+                    />
+                  ) : (
+                    <div className="h-full w-full bg-slate-200" />
+                  )}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
                   <div className="absolute bottom-2 left-2 right-2 flex items-end justify-between">
                     <span className="rounded bg-black/65 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white">
-                      {INCIDENT_DETAILS[selectedIncident.type].tag}
+                      {getTypeTag(selectedIncident.type)}
                     </span>
                     <span className="rounded bg-white/75 px-2 py-1 text-[10px] font-semibold text-slate-700">
                       {selectedIncident.location}
@@ -213,18 +231,18 @@ export default function LiveMapPage() {
                     <button
                       type="button"
                       className={`material-symbols-outlined unfilled text-[18px] ${panelItemPrimaryTextClass}`}
-                      onClick={() => setSelectedIncident(null)}
+                      onClick={() => setSelectedIncidentId(NO_SELECTION)}
                     >
                       close
                     </button>
                   </div>
                   <p className={`mb-3 text-[13px] leading-relaxed ${bodyTextClass}`}>
-                    {INCIDENT_DETAILS[selectedIncident.type].summary}
+                    {selectedIncident.rawMessage}
                   </p>
                   <div className="flex items-center justify-between rounded-lg border border-black/5 bg-white/35 p-2">
                     <div className="flex items-center gap-1 text-[12px] font-semibold text-color-orange">
                       <span className="material-symbols-outlined text-[14px]">timer</span>
-                      {INCIDENT_DETAILS[selectedIncident.type].delay}
+                      {formatDelay(selectedIncident.delayMinutes)}
                     </div>
                     <span
                       className={`rounded px-2 py-0.5 text-[10px] font-semibold ${getStatusClasses(selectedIncident.status).badge}`}
@@ -239,28 +257,34 @@ export default function LiveMapPage() {
         </Map>
       </div>
 
-      <div className="absolute left-space-8 top-[76px] z-40 flex items-center gap-space-3">
-        <button
-          className={`flex h-[44px] items-center gap-space-2 rounded-[24px] px-space-5 font-subheadline text-subheadline ${chipCardClass} ${activeChipClass}`}
-        >
-          <span className={`material-symbols-outlined text-[18px] ${chipIconActiveClass}`}>emergency</span>
-          <span className={`live-legible-text ${chipActiveTextClass}`}>All Incidents</span>
-        </button>
-        <button
-          className={`flex h-[44px] items-center gap-space-2 rounded-[24px] px-space-5 font-subheadline text-subheadline ${chipCardClass}`}
-        >
-          <span className={`material-symbols-outlined text-[18px] ${chipIconInactiveClass}`}>car_crash</span>
-          <span className={`live-legible-text ${chipInactiveTextClass}`}>Accidents</span>
-        </button>
-        <button
-          className={`flex h-[44px] items-center gap-space-2 rounded-[24px] px-space-5 font-subheadline text-subheadline ${chipCardClass}`}
-        >
-          <span className={`material-symbols-outlined text-[18px] ${chipIconInactiveClass}`}>traffic</span>
-          <span className={`live-legible-text ${chipInactiveTextClass}`}>Congestion</span>
-        </button>
+      <div className="absolute left-2 right-2 top-2 z-40 flex items-center gap-2 overflow-x-auto md:left-space-8 md:right-auto md:top-[76px] md:gap-space-3 md:overflow-visible">
+        {FILTER_OPTIONS.map((filter) => {
+          const isActive = activeFilter === filter.key
+          return (
+            <button
+              key={filter.key}
+              type="button"
+              className={`flex h-[40px] shrink-0 items-center gap-space-2 whitespace-nowrap rounded-[24px] px-4 font-subheadline text-subheadline md:h-[44px] md:px-space-5 ${chipCardClass} ${
+                isActive ? activeChipClass : ''
+              }`}
+              onClick={() => setActiveFilter(filter.key)}
+            >
+              <span
+                className={`material-symbols-outlined text-[18px] ${
+                  isActive ? chipIconActiveClass : chipIconInactiveClass
+                }`}
+              >
+                {filter.icon}
+              </span>
+              <span className={`live-legible-text ${isActive ? chipActiveTextClass : chipInactiveTextClass}`}>
+                {filter.label}
+              </span>
+            </button>
+          )
+        })}
       </div>
 
-      <aside className="absolute bottom-[108px] right-space-8 top-[76px] z-40 flex w-[340px] flex-col overflow-hidden rounded-[12px]">
+      <aside className="relative z-30 mx-2 mt-2 flex max-h-[36dvh] w-auto flex-col overflow-hidden rounded-[12px] md:absolute md:bottom-[108px] md:right-space-8 md:top-[76px] md:mx-0 md:mt-0 md:max-h-none md:w-[340px]">
         <div className={`flex h-full w-full flex-col ${panelCardClass}`}>
           <div className="border-b border-black/10 p-space-4">
             <h2 className={`flex items-center gap-space-2 font-headline text-headline ${textClass}`}>
@@ -270,62 +294,81 @@ export default function LiveMapPage() {
           </div>
 
           <div className="flex-1 space-y-space-2 overflow-y-auto p-space-3">
-            {MOCK_INCIDENTS.map((incident) => {
-              const details = INCIDENT_DETAILS[incident.type]
-              const statusClasses = getStatusClasses(incident.status)
-              const selected = selectedIncident?.id === incident.id
+            {isLoading ? (
+              <p className={`px-2 py-3 font-subheadline text-subheadline ${textClass}`}>
+                Loading incidents...
+              </p>
+            ) : null}
 
-              return (
-                <button
-                  key={incident.id}
-                  type="button"
-                  className={`relative w-full overflow-hidden rounded-[12px] border p-space-3 text-left transition-colors ${
-                    selected
-                      ? 'border-black/15 bg-white shadow-[0_6px_14px_rgba(0,0,0,0.08)]'
-                      : 'border-black/10 bg-white/95 hover:border-black/20 hover:bg-white'
-                  }`}
-                  onClick={() => setSelectedIncident(incident)}
-                >
-                  <div
-                    className={`absolute left-0 top-0 h-full w-1 ${
-                      incident.status === 'active'
-                        ? 'bg-color-red'
-                        : incident.status === 'expiring'
-                          ? 'bg-color-orange'
-                          : 'bg-slate-500'
+            {isError ? (
+              <p className={`px-2 py-3 font-subheadline text-subheadline ${textClass}`}>
+                Failed to load. Is the API running?
+              </p>
+            ) : null}
+
+            {!isLoading && !isError && !visibleIncidents.length ? (
+              <p className={`px-2 py-3 font-subheadline text-subheadline ${textClass}`}>
+                No active incidents right now.
+              </p>
+            ) : null}
+
+            {!isLoading &&
+              !isError &&
+              visibleIncidents.map((incident) => {
+                const statusClasses = getStatusClasses(incident.status)
+                const selected = selectedIncident?.id === incident.id
+
+                return (
+                  <button
+                    key={incident.id}
+                    type="button"
+                    className={`relative w-full overflow-hidden rounded-[12px] border p-space-3 text-left transition-colors ${
+                      selected
+                        ? 'border-black/15 bg-white shadow-[0_6px_14px_rgba(0,0,0,0.08)]'
+                        : 'border-black/10 bg-white/95 hover:border-black/20 hover:bg-white'
                     }`}
-                  />
-                  <div className="mb-2 flex items-start justify-between pl-2">
-                    <span className={`live-legible-text font-subheadline text-subheadline font-semibold ${panelItemPrimaryTextClass}`}>
-                      {incident.location}
-                    </span>
-                    <span
-                      className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${statusClasses.badge}`}
-                    >
-                      {statusClasses.label}
-                    </span>
-                  </div>
-                  <p className={`mb-2 pl-2 font-footnote text-footnote ${bodyTextClass}`}>
-                    {details.summary}
-                  </p>
-                  <div className="flex items-center justify-between pl-2">
-                    <div className="flex items-center gap-1 text-[12px] font-semibold text-color-orange">
-                      <span className={`material-symbols-outlined text-[14px] ${getTypeColor(incident.type)}`}>
-                        {getTypeIcon(incident.type)}
+                    onClick={() => setSelectedIncidentId(incident.id)}
+                  >
+                    <div
+                      className={`absolute left-0 top-0 h-full w-1 ${
+                        incident.status === 'active'
+                          ? 'bg-color-red'
+                          : incident.status === 'expiring'
+                            ? 'bg-color-orange'
+                            : 'bg-slate-500'
+                      }`}
+                    />
+                    <div className="mb-2 flex items-start justify-between pl-2">
+                      <span className={`live-legible-text font-subheadline text-subheadline font-semibold ${panelItemPrimaryTextClass}`}>
+                        {incident.location}
                       </span>
-                      <span>{details.delay}</span>
+                      <span
+                        className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${statusClasses.badge}`}
+                      >
+                        {statusClasses.label}
+                      </span>
                     </div>
-                    <span className={`text-[12px] ${panelItemPrimaryTextClass}`}>{incident.id}</span>
-                  </div>
-                </button>
-              )
-            })}
+                    <p className={`mb-2 pl-2 font-footnote text-footnote ${bodyTextClass}`}>
+                      {incident.description}
+                    </p>
+                    <div className="flex items-center justify-between pl-2">
+                      <div className="flex items-center gap-1 text-[12px] font-semibold text-color-orange">
+                        <span className={`material-symbols-outlined text-[14px] ${getTypeColor(incident.type)}`}>
+                          {getTypeIcon(incident.type)}
+                        </span>
+                        <span>{formatDelay(incident.delayMinutes)}</span>
+                      </div>
+                      <span className={`text-[12px] ${panelItemPrimaryTextClass}`}>{incident.id}</span>
+                    </div>
+                  </button>
+                )
+              })}
           </div>
         </div>
       </aside>
 
-      <div className="absolute bottom-space-8 left-space-8 right-[390px] z-40 flex h-[68px] items-stretch justify-start gap-space-3 rounded-[12px]">
-        <div className={`flex w-fit min-w-[160px] items-center gap-space-3 px-space-4 ${statsCardClass}`}>
+      <div className="relative z-30 m-2 grid grid-cols-1 gap-2 sm:grid-cols-2 md:absolute md:bottom-space-8 md:left-space-8 md:right-[390px] md:m-0 md:flex md:h-[68px] md:items-stretch md:justify-start md:gap-space-3 md:rounded-[12px]">
+        <div className={`flex min-w-0 w-full items-center gap-space-3 px-space-4 py-3 md:w-fit md:min-w-[160px] md:py-0 ${statsCardClass}`}>
           <div className="flex h-9 w-9 items-center justify-center rounded-full border border-color-red/25 bg-color-red/10 text-color-red">
             <span className="material-symbols-outlined text-[18px]">warning</span>
           </div>
@@ -339,21 +382,21 @@ export default function LiveMapPage() {
           </div>
         </div>
 
-        <div className={`flex w-fit min-w-[160px] items-center gap-space-3 px-space-4 ${statsCardClass}`}>
+        <div className={`flex min-w-0 w-full items-center gap-space-3 px-space-4 py-3 md:w-fit md:min-w-[160px] md:py-0 ${statsCardClass}`}>
           <div className="flex h-9 w-9 items-center justify-center rounded-full border border-primary/25 bg-primary/10 text-primary">
             <span className="material-symbols-outlined text-[18px]">calendar_today</span>
           </div>
           <div>
             <div className={`font-caption-1 text-caption-1 uppercase tracking-wider ${statsTextClass}`}>
-              Total Tracked
+              Total Today
             </div>
             <div className={`live-legible-text font-title-2 text-title-2 font-bold ${statsTextClass}`}>
-              {MOCK_INCIDENTS.length}
+              {incidents.length}
             </div>
           </div>
         </div>
 
-        <div className={`flex w-fit min-w-[160px] items-center gap-space-3 px-space-4 ${statsCardClass}`}>
+        <div className={`flex min-w-0 w-full items-center gap-space-3 px-space-4 py-3 md:w-fit md:min-w-[160px] md:py-0 ${statsCardClass}`}>
           <div className="flex h-9 w-9 items-center justify-center rounded-full border border-color-orange/25 bg-color-orange/10 text-color-orange">
             <span className="material-symbols-outlined text-[18px]">map</span>
           </div>
@@ -362,7 +405,7 @@ export default function LiveMapPage() {
               Focus Junction
             </div>
             <div className={`live-legible-text font-headline text-headline font-semibold ${statsTextClass}`}>
-              {selectedIncident ? selectedIncident.location : 'Hitech City'}
+              {selectedIncident ? selectedIncident.location : '—'}
             </div>
           </div>
         </div>

@@ -1,39 +1,160 @@
-const hourlyBars = [
-  15, 10, 8, 5, 6, 12, 55, 85, 95, 70, 45, 40, 38, 42, 45, 50, 75, 90, 100, 85,
-  55, 35, 25, 15,
-]
-
-const hotspotRows = [
-  { name: 'Cyber Towers', severity: 'Critical', width: 95, color: 'bg-color-red' },
-  { name: 'DLF Avenue', severity: 'High', width: 82, color: 'bg-color-orange' },
-  { name: 'KPHB Colony', severity: 'High', width: 76, color: 'bg-color-orange' },
-  {
-    name: 'Jubilee Hills Checkpost',
-    severity: 'Elevated',
-    width: 65,
-    color: 'bg-primary',
-  },
-  {
-    name: 'Mindspace Junction',
-    severity: 'Elevated',
-    width: 58,
-    color: 'bg-primary',
-  },
-]
+import { useQuery } from '@tanstack/react-query'
+import { useMemo } from 'react'
+import { fetchIntelligence, type IncidentType } from '../api/incidents'
 
 const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-const heatmapData = [
-  [5, 5, 5, 5, 10, 20, 40, 70, 90, 80, 50, 40, 40, 50, 50, 60, 80, 90, 100, 80, 40, 20, 10, 5],
-  [5, 5, 5, 5, 10, 20, 50, 80, 100, 70, 40, 30, 40, 40, 50, 60, 70, 90, 90, 60, 30, 10, 5, 5],
-  [5, 5, 5, 5, 10, 20, 40, 80, 90, 60, 40, 30, 30, 40, 50, 60, 80, 100, 80, 50, 30, 10, 5, 5],
-  [5, 5, 5, 5, 10, 20, 50, 80, 80, 50, 40, 30, 40, 50, 60, 70, 90, 100, 90, 60, 40, 20, 10, 5],
-  [5, 5, 5, 10, 10, 30, 60, 90, 80, 60, 50, 50, 60, 70, 80, 90, 100, 100, 100, 90, 70, 40, 20, 10],
-  [10, 10, 5, 5, 5, 5, 10, 20, 30, 40, 50, 60, 70, 80, 70, 60, 50, 60, 70, 60, 40, 30, 20, 10],
-  [10, 5, 5, 5, 5, 5, 5, 10, 10, 20, 30, 40, 50, 40, 30, 30, 40, 50, 40, 30, 20, 10, 10, 5],
-]
+function formatTypeLabel(type: IncidentType) {
+  if (type === 'roadwork') return 'Roadworks'
+  if (type === 'breakdown') return 'Breakdowns'
+  if (type === 'accident') return 'Accidents'
+  if (type === 'congestion') return 'Congestion'
+  return 'Other'
+}
+
+function getTypeColor(type: IncidentType) {
+  if (type === 'accident') return 'bg-color-red'
+  if (type === 'congestion') return 'bg-color-orange'
+  if (type === 'roadwork') return 'bg-primary'
+  if (type === 'breakdown') return 'bg-color-purple'
+  return 'bg-slate-400'
+}
+
+function getSeverityClass(count: number, max: number) {
+  if (!max) return 'text-primary'
+  const ratio = count / max
+  if (ratio >= 0.75) return 'text-color-red'
+  if (ratio >= 0.45) return 'text-color-orange'
+  return 'text-primary'
+}
+
+function getSeverityLabel(count: number, max: number) {
+  if (!max) return 'Elevated'
+  const ratio = count / max
+  if (ratio >= 0.75) return 'Critical'
+  if (ratio >= 0.45) return 'High'
+  return 'Elevated'
+}
+
+function normalizeDay(day: string) {
+  const lower = day.toLowerCase()
+  if (lower.startsWith('mon')) return 'Mon'
+  if (lower.startsWith('tue')) return 'Tue'
+  if (lower.startsWith('wed')) return 'Wed'
+  if (lower.startsWith('thu')) return 'Thu'
+  if (lower.startsWith('fri')) return 'Fri'
+  if (lower.startsWith('sat')) return 'Sat'
+  if (lower.startsWith('sun')) return 'Sun'
+  return day.slice(0, 3)
+}
 
 export default function IntelligencePage() {
+  const { data, isLoading } = useQuery({
+    queryKey: ['intelligence'],
+    queryFn: () => fetchIntelligence(365),
+    staleTime: 60_000,
+  })
+
+  const summary = data?.summary
+
+  const hourlyBars = useMemo(() => {
+    const hourlyMap = new Map<number, number>()
+    data?.hourly.forEach((entry) => {
+      hourlyMap.set(entry.hour, entry.count)
+    })
+
+    const counts = Array.from({ length: 24 }, (_, hour) => hourlyMap.get(hour) ?? 0)
+    const max = Math.max(...counts, 1)
+    return counts.map((count) => Math.max((count / max) * 100, count > 0 ? 6 : 0))
+  }, [data?.hourly])
+
+  const distribution = useMemo(() => {
+    const byType = data?.by_type ?? []
+    const total = byType.reduce((sum, row) => sum + row.count, 0)
+
+    const ordered = [...byType].sort((a, b) => b.count - a.count)
+
+    return {
+      rows: ordered.map((row) => ({
+        type: row.type,
+        label: formatTypeLabel(row.type),
+        count: row.count,
+        percent: total > 0 ? Math.round((row.count / total) * 100) : 0,
+        color: getTypeColor(row.type),
+      })),
+      total,
+    }
+  }, [data?.by_type])
+
+  const donutStyle = useMemo(() => {
+    const rows = distribution.rows
+    if (!rows.length) {
+      return {
+        background: 'conic-gradient(#cbd5e1 0deg 360deg)',
+      }
+    }
+
+    let angle = 0
+    const stops = rows.map((row) => {
+      const start = angle
+      const span = Math.max((row.percent / 100) * 360, 0)
+      angle += span
+      const color =
+        row.type === 'accident'
+          ? '#FF3B30'
+          : row.type === 'congestion'
+            ? '#FF9500'
+            : row.type === 'roadwork'
+              ? '#0058bc'
+              : row.type === 'breakdown'
+                ? '#8b5cf6'
+                : '#94a3b8'
+      return `${color} ${start}deg ${Math.max(angle, start + 1)}deg`
+    })
+
+    if (angle < 360) {
+      stops.push(`#cbd5e1 ${angle}deg 360deg`)
+    }
+
+    return {
+      background: `conic-gradient(${stops.join(', ')})`,
+    }
+  }, [distribution.rows])
+
+  const hotspotRows = useMemo(() => {
+    const rows = [...(data?.hotspots ?? [])].sort((a, b) => b.count - a.count).slice(0, 10)
+    const max = rows[0]?.count ?? 0
+
+    return rows.map((row) => ({
+      name: row.location_name,
+      count: row.count,
+      width: max > 0 ? Math.max((row.count / max) * 100, 6) : 0,
+      severity: getSeverityLabel(row.count, max),
+      severityClass: getSeverityClass(row.count, max),
+      color: row.count / Math.max(max, 1) >= 0.75 ? 'bg-color-red' : row.count / Math.max(max, 1) >= 0.45 ? 'bg-color-orange' : 'bg-primary',
+    }))
+  }, [data?.hotspots])
+
+  const heatmapData = useMemo(() => {
+    const matrix = dayLabels.map(() => Array.from({ length: 24 }, () => 0))
+
+    data?.heatmap.forEach((entry) => {
+      const day = normalizeDay(entry.day)
+      const rowIndex = dayLabels.indexOf(day)
+      if (rowIndex === -1 || entry.hour < 0 || entry.hour > 23) return
+      matrix[rowIndex][entry.hour] = entry.count
+    })
+
+    const max = Math.max(...matrix.flat(), 1)
+
+    return matrix.map((row) =>
+      row.map((count) => {
+        if (count <= 0) return 0
+        return Math.round((count / max) * 100)
+      }),
+    )
+  }, [data?.heatmap])
+
   return (
     <div className="intelligence-abstract-base relative min-h-screen overflow-x-hidden font-body text-body text-label-primary">
       <div className="pointer-events-none absolute inset-0 z-0 bg-white" />
@@ -58,72 +179,80 @@ export default function IntelligencePage() {
           </p>
         </header>
 
+        {isLoading ? (
+          <div className="glass-card intelligence-glass-card rounded-xl p-space-6 font-subheadline text-subheadline text-label-primary">
+            Loading intelligence...
+          </div>
+        ) : null}
+
         <div className="grid grid-cols-1 gap-space-5 md:grid-cols-2 lg:grid-cols-4">
           <div className="glass-card intelligence-glass-card relative rounded-xl p-space-5">
             <div className="mb-space-3 flex items-center justify-between">
               <span className="font-subheadline text-subheadline font-medium text-label-primary">
-                Total Incidents
+                Total Today
               </span>
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-color-red/10 text-color-red">
                 <span className="material-symbols-outlined text-[18px]">warning</span>
               </div>
             </div>
             <div className="font-large-title text-large-title font-semibold text-label-primary">
-              1,245
+              {summary?.total_today ?? 0}
             </div>
             <div className="mt-2 flex items-center gap-1 font-caption-1 text-caption-1 text-color-red">
               <span className="material-symbols-outlined text-[14px]">trending_up</span>
-              +12% from last week
+              Incidents reported today
             </div>
           </div>
 
           <div className="glass-card intelligence-glass-card relative rounded-xl p-space-5">
             <div className="mb-space-3 flex items-center justify-between">
               <span className="font-subheadline text-subheadline font-medium text-label-primary">
-                Avg/Day
+                Active Now
               </span>
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-color-orange/10 text-color-orange">
                 <span className="material-symbols-outlined text-[18px]">calendar_today</span>
               </div>
             </div>
-            <div className="font-large-title text-large-title font-semibold text-label-primary">42</div>
+            <div className="font-large-title text-large-title font-semibold text-label-primary">
+              {summary?.active_now ?? 0}
+            </div>
             <div className="mt-2 flex items-center gap-1 font-caption-1 text-caption-1 text-color-green">
-              <span className="material-symbols-outlined text-[14px]">trending_down</span>
-              -3% from last week
+              <span className="material-symbols-outlined text-[14px]">schedule</span>
+              Live network state
             </div>
           </div>
 
           <div className="glass-card intelligence-glass-card relative rounded-xl p-space-5">
             <div className="mb-space-3 flex items-center justify-between">
               <span className="font-subheadline text-subheadline font-medium text-label-primary">
-                All-time Worst
+                Avg Duration
               </span>
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
                 <span className="material-symbols-outlined text-[18px]">location_on</span>
               </div>
             </div>
             <div className="mt-1 truncate font-title-3 text-title-3 font-semibold leading-tight text-label-primary">
-              Cyber Towers
+              {summary?.avg_duration_minutes ?? 0} min
             </div>
             <div className="mt-2 font-caption-1 text-caption-1 text-label-secondary">
-              Junction severity: Critical
+              Rolling incident duration
             </div>
           </div>
 
           <div className="glass-card intelligence-glass-card relative rounded-xl p-space-5">
             <div className="mb-space-3 flex items-center justify-between">
               <span className="font-subheadline text-subheadline font-medium text-label-primary">
-                Peak Hour
+                Focus Junction
               </span>
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-color-purple/10 text-color-purple">
                 <span className="material-symbols-outlined text-[18px]">schedule</span>
               </div>
             </div>
             <div className="mt-1 font-title-2 text-title-2 font-semibold text-label-primary">
-              18:00 - 19:00
+              {summary?.focus_junction?.name ?? '—'}
             </div>
             <div className="mt-2 font-caption-1 text-caption-1 text-label-secondary">
-              Evening Rush
+              {summary?.focus_junction ? `${summary.focus_junction.count} incidents` : 'No dominant hotspot'}
             </div>
           </div>
         </div>
@@ -188,60 +317,37 @@ export default function IntelligencePage() {
             <div className="relative my-4 flex flex-grow items-center justify-center">
               <div
                 className="h-40 w-40 rounded-full"
-                style={{
-                  background:
-                    'conic-gradient(#FF3B30 0deg 126deg, #FF9500 126deg 234deg, #0058bc 234deg 360deg)',
-                }}
+                style={donutStyle}
               >
                 <div className="absolute inset-0 m-auto flex h-28 w-28 flex-col items-center justify-center rounded-full bg-surface-container-low backdrop-blur-md">
-                  <span className="font-headline text-headline text-label-primary">1,245</span>
+                  <span className="font-headline text-headline text-label-primary">
+                    {distribution.total}
+                  </span>
                   <span className="font-caption-2 text-caption-2 text-label-secondary">Total</span>
                 </div>
               </div>
             </div>
 
             <div className="mt-auto space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 rounded-full bg-color-red" />
-                  <span className="font-subheadline text-subheadline text-label-primary">
-                    Accidents
+              {distribution.rows.slice(0, 4).map((row) => (
+                <div key={row.type} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className={`h-3 w-3 rounded-full ${row.color}`} />
+                    <span className="font-subheadline text-subheadline text-label-primary">
+                      {row.label}
+                    </span>
+                  </div>
+                  <span className="font-footnote text-footnote font-medium text-label-primary">
+                    {row.percent}%
                   </span>
                 </div>
-                <span className="font-footnote text-footnote font-medium text-label-primary">
-                  35%
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 rounded-full bg-color-orange" />
-                  <span className="font-subheadline text-subheadline text-label-primary">
-                    Congestion
-                  </span>
-                </div>
-                <span className="font-footnote text-footnote font-medium text-label-primary">
-                  30%
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 rounded-full bg-primary" />
-                  <span className="font-subheadline text-subheadline text-label-primary">
-                    Roadworks
-                  </span>
-                </div>
-                <span className="font-footnote text-footnote font-medium text-label-primary">
-                  35%
-                </span>
-              </div>
+              ))}
             </div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 gap-space-5 lg:grid-cols-12">
-          <div className="glass-card intelligence-glass-card relative rounded-xl p-space-6 lg:col-span-5">
+          <div className="glass-card intelligence-glass-card relative flex max-h-[350px] flex-col overflow-hidden rounded-xl p-space-6 lg:col-span-5">
             <h2 className="mb-1 font-title-3 text-title-3 font-semibold text-label-primary">
               Hotspot Junctions
             </h2>
@@ -249,22 +355,14 @@ export default function IntelligencePage() {
               Ranked by severity and frequency.
             </p>
 
-            <div className="space-y-4">
+            <div className="-mr-space-6 flex-1 space-y-4 overflow-y-auto pr-space-6">
               {hotspotRows.map((row) => (
                 <div key={row.name} className="group">
                   <div className="mb-1 flex items-center justify-between">
                     <span className="font-subheadline text-subheadline font-medium text-label-primary transition-colors group-hover:text-primary">
                       {row.name}
                     </span>
-                    <span
-                      className={`font-caption-1 text-caption-1 font-semibold ${
-                        row.severity === 'Critical'
-                          ? 'text-color-red'
-                          : row.severity === 'High'
-                            ? 'text-color-orange'
-                            : 'text-primary'
-                      }`}
-                    >
+                    <span className={`font-caption-1 text-caption-1 font-semibold ${row.severityClass}`}>
                       {row.severity}
                     </span>
                   </div>
@@ -279,7 +377,7 @@ export default function IntelligencePage() {
             </div>
           </div>
 
-          <div className="glass-card intelligence-glass-card relative rounded-xl p-space-6 lg:col-span-7">
+          <div className="glass-card intelligence-glass-card relative flex max-h-[350px] flex-col overflow-hidden rounded-xl p-space-6 lg:col-span-7">
             <div className="mb-space-5 flex items-end justify-between">
               <div>
                 <h2 className="font-title-3 text-title-3 font-semibold text-label-primary">
@@ -296,7 +394,7 @@ export default function IntelligencePage() {
               </div>
             </div>
 
-            <div className="w-full overflow-x-auto">
+            <div className="w-full flex-1 overflow-auto">
               <div className="min-w-[600px]">
                 <div className="mb-2 grid grid-cols-[40px_repeat(24,1fr)] gap-1 text-center font-caption-2 text-caption-2 text-label-secondary">
                   <div />
@@ -327,11 +425,14 @@ export default function IntelligencePage() {
                         return (
                           <div
                             key={`${dayLabels[rowIndex]}-${colIndex.toString()}`}
-                            className={`h-6 rounded-[2px] bg-color-red/${intensity.toString()} ${
+                            className={`h-6 rounded-[2px] ${
                               isFridayPeak
                                 ? 'z-10 scale-105 shadow-[0_0_8px_rgba(255,59,48,0.5)]'
                                 : ''
                             }`}
+                            style={{
+                              backgroundColor: `rgba(255, 59, 48, ${intensity <= 8 ? 0.04 : (intensity / 100) * 0.9 + 0.1})`,
+                            }}
                           />
                         )
                       })}
