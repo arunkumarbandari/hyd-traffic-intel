@@ -70,7 +70,6 @@ export default function HydLogo({ width = 240 }: HydLogoProps) {
               letterSpacing: -1,
               color: '#0a0a1a',
               WebkitTextStroke: '2px #0071e3',
-              // @ts-expect-error: paintOrder not in React SVG types
               paintOrder: 'stroke fill',
               position: 'relative',
               zIndex: 2,
