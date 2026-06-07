@@ -257,6 +257,7 @@ export default function HistoryPage() {
   const [fromCalendarOpen, setFromCalendarOpen] = useState(false)
   const [toCalendarOpen, setToCalendarOpen] = useState(false)
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
   const typeDropdownRef = useRef<HTMLDivElement | null>(null)
   const fromDateRef = useRef<HTMLDivElement | null>(null)
   const toDateRef = useRef<HTMLDivElement | null>(null)
@@ -694,7 +695,10 @@ export default function HistoryPage() {
                 </h3>
 
                 {selectedIncident?.photo_url ? (
-                  <div className="group relative cursor-pointer overflow-hidden rounded-xl border border-outline-variant/30 shadow-sm">
+                  <div
+                    className="group relative cursor-pointer overflow-hidden rounded-xl border border-outline-variant/30 shadow-sm"
+                    onClick={() => setLightboxOpen(true)}
+                  >
                     <img
                       alt="Traffic incident evidence"
                       className="h-[180px] w-full object-cover transition-transform duration-500 group-hover:scale-105"
@@ -749,6 +753,27 @@ export default function HistoryPage() {
           </div>
         </section>
       </main>
+
+      {lightboxOpen && selectedIncident?.photo_url && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85"
+          onClick={() => setLightboxOpen(false)}
+        >
+          <img
+            src={selectedIncident.photo_url}
+            alt="Incident evidence fullscreen"
+            className="max-h-[85vh] max-w-[90vw] rounded-xl object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            type="button"
+            className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm hover:bg-white/20"
+            onClick={() => setLightboxOpen(false)}
+          >
+            <span className="material-symbols-outlined text-[22px]">close</span>
+          </button>
+        </div>
+      )}
     </div>
   )
 }

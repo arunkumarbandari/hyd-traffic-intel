@@ -14,6 +14,7 @@ type Incident = {
   delayMinutes: number
   rawMessage: string
   photoUrl: string | null
+  reportedAt: string
 }
 
 type LiveFilterType = 'all' | IncidentType
@@ -22,9 +23,32 @@ const FILTER_OPTIONS: Array<{ key: LiveFilterType; label: string; icon: string }
   { key: 'all', label: 'All Incidents', icon: 'emergency' },
   { key: 'accident', label: 'Accidents', icon: 'car_crash' },
   { key: 'congestion', label: 'Congestion', icon: 'traffic' },
+  { key: 'breakdown', label: 'Breakdown', icon: 'build' },
 ]
 
 const NO_SELECTION = '__none__'
+
+function IncidentPin({ color, glow, selected }: { color: string; glow: string; selected: boolean }) {
+  const size = selected ? 38 : 32
+  return (
+    <svg
+      width={size}
+      height={size * 1.35}
+      viewBox="0 0 32 43"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      style={{
+        filter: `drop-shadow(${glow})`,
+        transform: selected ? 'scale(1.15) translateY(-2px)' : 'scale(1)',
+        transition: 'transform 0.15s ease',
+      }}
+    >
+      <path d="M16 0C7.163 0 0 7.163 0 16c0 10 16 27 16 27S32 26 32 16C32 7.163 24.837 0 16 0z" fill={color} />
+      <circle cx="16" cy="16" r="7" fill="white" fillOpacity="0.9" />
+      <circle cx="16" cy="16" r="3.5" fill={color} />
+    </svg>
+  )
+}
 
 function mapIncident(row: IncidentRow): Incident {
   return {
@@ -38,13 +62,21 @@ function mapIncident(row: IncidentRow): Incident {
     delayMinutes: row.estimated_minutes,
     rawMessage: row.raw_message,
     photoUrl: row.photo_url,
+    reportedAt: row.reported_at,
   }
+}
+
+function formatReceivedTime(iso: string) {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
 function getStatusClasses(status: IncidentStatus) {
   if (status === 'active') {
     return {
-      pin: 'bg-[#FF3B30] shadow-[0_0_18px_#FF3B30]',
+      pin: '#FF3B30',
+      glow: '0 0 18px #FF3B30',
       badge: 'bg-color-red/10 text-color-red',
       label: 'Active',
     }
@@ -52,14 +84,16 @@ function getStatusClasses(status: IncidentStatus) {
 
   if (status === 'expiring') {
     return {
-      pin: 'bg-[#FF9500] shadow-[0_0_18px_#FF9500]',
+      pin: '#FF9500',
+      glow: '0 0 18px #FF9500',
       badge: 'bg-color-orange/10 text-color-orange',
       label: 'Expiring',
     }
   }
 
   return {
-    pin: 'bg-[rgba(52,199,89,0.85)]',
+    pin: 'rgba(52,199,89,0.85)',
+    glow: '0 0 12px rgba(52,199,89,0.6)',
     badge: 'bg-color-green/18 text-color-green-dark',
     label: 'Cleared',
   }
@@ -97,16 +131,10 @@ export default function LiveMapPage() {
 
   const panelCardClass = 'live-orange-panel-glass'
   const statsCardClass = 'live-blue-stats-card'
-  const chipCardClass = 'live-blue-chip'
-  const activeChipClass = 'live-blue-chip-active'
   const textClass = 'text-white'
   const bodyTextClass = 'text-slate-600'
   const panelItemPrimaryTextClass = 'text-slate-900'
-  const chipActiveTextClass = 'text-white'
-  const chipInactiveTextClass = 'text-[#0071e3]'
   const statsTextClass = 'text-white'
-  const chipIconActiveClass = 'text-white'
-  const chipIconInactiveClass = 'text-[#0071e3]'
   const popupCardClass = 'live-blue-glass-card'
 
   const { data: incidents = [], isLoading, isError } = useQuery({
@@ -171,22 +199,25 @@ export default function LiveMapPage() {
         >
           {visibleIncidents.map((incident) => {
             const statusClasses = getStatusClasses(incident.status)
+            const selected = selectedIncident?.id === incident.id
             return (
               <Marker
                 key={incident.id}
                 latitude={incident.lat}
                 longitude={incident.lng}
-                anchor="center"
+                anchor="bottom"
               >
                 <button
                   type="button"
                   aria-label={`${incident.type} at ${incident.location}`}
-                  className={`h-7 w-7 rounded-full border-2 border-white transition-transform hover:scale-105 ${statusClasses.pin}`}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
                   onClick={(event) => {
                     event.stopPropagation()
                     setSelectedIncidentId(incident.id)
                   }}
-                />
+                >
+                  <IncidentPin color={statusClasses.pin} glow={statusClasses.glow} selected={selected} />
+                </button>
               </Marker>
             )
           })}
@@ -202,7 +233,17 @@ export default function LiveMapPage() {
               maxWidth="320px"
               className="!z-[45]"
             >
-              <div className={`w-[280px] overflow-hidden ${popupCardClass}`}>
+              <div
+                className={`w-[280px] overflow-hidden ${popupCardClass}`}
+                style={{
+                  background: 'rgba(255,255,255,0.82)',
+                  backdropFilter: 'blur(24px)',
+                  WebkitBackdropFilter: 'blur(24px)',
+                  border: '1px solid rgba(255,255,255,0.7)',
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.14)',
+                  borderRadius: '12px',
+                }}
+              >
                 <div className="relative h-28 w-full border-b border-black/10">
                   {selectedIncident.photoUrl ? (
                     <img
@@ -213,19 +254,10 @@ export default function LiveMapPage() {
                   ) : (
                     <div className="h-full w-full bg-slate-200" />
                   )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
-                  <div className="absolute bottom-2 left-2 right-2 flex items-end justify-between">
-                    <span className="rounded bg-black/65 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white">
-                      {getTypeTag(selectedIncident.type)}
-                    </span>
-                    <span className="rounded bg-white/75 px-2 py-1 text-[10px] font-semibold text-slate-700">
-                      {selectedIncident.location}
-                    </span>
-                  </div>
                 </div>
                 <div className="p-3">
                   <div className="mb-1 flex items-center justify-between">
-                    <h3 className={`live-legible-text font-headline text-headline ${panelItemPrimaryTextClass}`}>
+                    <h3 className={`font-headline text-headline ${panelItemPrimaryTextClass}`}>
                       {selectedIncident.location}
                     </h3>
                     <button
@@ -235,6 +267,15 @@ export default function LiveMapPage() {
                     >
                       close
                     </button>
+                  </div>
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
+                      {getTypeTag(selectedIncident.type)}
+                    </span>
+                    <span className={`flex items-center gap-1 text-[11px] ${bodyTextClass}`}>
+                      <span className="material-symbols-outlined text-[13px]">schedule</span>
+                      {formatReceivedTime(selectedIncident.reportedAt)}
+                    </span>
                   </div>
                   <p className={`mb-3 text-[13px] leading-relaxed ${bodyTextClass}`}>
                     {selectedIncident.rawMessage}
@@ -264,19 +305,22 @@ export default function LiveMapPage() {
             <button
               key={filter.key}
               type="button"
-              className={`flex h-[40px] shrink-0 items-center gap-space-2 whitespace-nowrap rounded-[24px] px-4 font-subheadline text-subheadline md:h-[44px] md:px-space-5 ${chipCardClass} ${
-                isActive ? activeChipClass : ''
-              }`}
+              className="flex h-[40px] shrink-0 items-center gap-space-2 whitespace-nowrap rounded-[24px] px-4 font-subheadline text-subheadline shadow-[0_4px_12px_rgba(0,0,0,0.08)] md:h-[44px] md:px-space-5"
+              style={
+                isActive
+                  ? { background: '#0071e3', border: '1px solid #0071e3', color: '#fff' }
+                  : {
+                      background: 'rgba(255,255,255,0.92)',
+                      border: '1px solid rgba(0,113,227,0.35)',
+                      color: '#0071e3',
+                    }
+              }
               onClick={() => setActiveFilter(filter.key)}
             >
-              <span
-                className={`material-symbols-outlined text-[18px] ${
-                  isActive ? chipIconActiveClass : chipIconInactiveClass
-                }`}
-              >
+              <span className="material-symbols-outlined text-[18px]" style={{ color: 'inherit' }}>
                 {filter.icon}
               </span>
-              <span className={`live-legible-text ${isActive ? chipActiveTextClass : chipInactiveTextClass}`}>
+              <span className="live-legible-text" style={{ color: 'inherit' }}>
                 {filter.label}
               </span>
             </button>
@@ -358,7 +402,10 @@ export default function LiveMapPage() {
                         </span>
                         <span>{formatDelay(incident.delayMinutes)}</span>
                       </div>
-                      <span className={`text-[12px] ${panelItemPrimaryTextClass}`}>{incident.id}</span>
+                      <span className={`flex items-center gap-1 text-[12px] ${panelItemPrimaryTextClass}`}>
+                        <span className="material-symbols-outlined text-[14px]">schedule</span>
+                        {formatReceivedTime(incident.reportedAt)}
+                      </span>
                     </div>
                   </button>
                 )
