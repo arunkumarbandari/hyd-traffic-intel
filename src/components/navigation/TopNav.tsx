@@ -1,6 +1,6 @@
 import HydLogo from '../../components/HydLogo'
 import { useState } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 
 const segmentedLinkBaseClass =
   "flex items-center rounded-[9px] px-4 py-2 text-sm font-['Inter'] tracking-tight transition-all duration-200 ease-in-out"
@@ -10,6 +10,7 @@ const mobileLinkClass =
 
 export default function TopNav() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const navigate = useNavigate()
 
   return (
     <nav className="fixed top-0 z-50 h-16 w-full border-b-[0.5px] border-black/10 bg-white/70 shadow-[0_4px_24px_-1px_rgba(0,0,0,0.06)] backdrop-blur-[30px]">
@@ -79,6 +80,7 @@ export default function TopNav() {
             type="button"
             className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg text-slate-500 transition-all duration-300 hover:bg-black/5 hover:text-slate-900 active:scale-95"
             aria-label="Profile"
+            onClick={() => navigate('/about')}
           >
             <span className="material-symbols-outlined text-[24px]">account_circle</span>
           </button>
@@ -129,6 +131,19 @@ export default function TopNav() {
               onClick={() => setMobileMenuOpen(false)}
             >
               History
+            </NavLink>
+            <NavLink
+              to="/about"
+              className={({ isActive }) =>
+                `${mobileLinkClass} ${
+                  isActive
+                    ? 'bg-blue-50 font-semibold text-blue-600'
+                    : 'text-slate-600 hover:bg-black/5 hover:text-slate-900'
+                }`
+              }
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              About
             </NavLink>
           </div>
         </div>
