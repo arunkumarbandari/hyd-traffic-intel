@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import Map, { Marker, Popup } from 'react-map-gl/mapbox'
-import { fetchIncidents, type IncidentRow, type IncidentStatus, type IncidentType } from '../api/incidents'
+import { fetchTodayIncidents, type IncidentRow, type IncidentStatus, type IncidentType } from '../api/incidents'
 
 type Incident = {
   id: string
@@ -18,6 +18,7 @@ type Incident = {
 }
 
 type LiveFilterType = 'all' | IncidentType
+type StatusView = 'active' | 'cleared'
 
 const FILTER_OPTIONS: Array<{ key: LiveFilterType; label: string; icon: string }> = [
   { key: 'all', label: 'All Incidents', icon: 'emergency' },
@@ -26,9 +27,24 @@ const FILTER_OPTIONS: Array<{ key: LiveFilterType; label: string; icon: string }
   { key: 'breakdown', label: 'Breakdown', icon: 'build' },
 ]
 
+// B4: "Active" groups active + expiring; "Cleared" is the cleared set.
+function isActiveStatus(status: IncidentStatus) {
+  return status === 'active' || status === 'expiring'
+}
+
 const NO_SELECTION = '__none__'
 
-function IncidentPin({ color, glow, selected }: { color: string; glow: string; selected: boolean }) {
+function IncidentPin({
+  color,
+  glow,
+  selected,
+  dimmed = false,
+}: {
+  color: string
+  glow: string
+  selected: boolean
+  dimmed?: boolean
+}) {
   const size = selected ? 38 : 32
   return (
     <svg
@@ -41,6 +57,7 @@ function IncidentPin({ color, glow, selected }: { color: string; glow: string; s
         filter: `drop-shadow(${glow})`,
         transform: selected ? 'scale(1.15) translateY(-2px)' : 'scale(1)',
         transition: 'transform 0.15s ease',
+        opacity: dimmed && !selected ? 0.7 : 1,
       }}
     >
       <path d="M16 0C7.163 0 0 7.163 0 16c0 10 16 27 16 27S32 26 32 16C32 7.163 24.837 0 16 0z" fill={color} />
@@ -91,10 +108,11 @@ function getStatusClasses(status: IncidentStatus) {
     }
   }
 
+  // Cleared: de-emphasized gray (design-system `cleared` token), muted glow.
   return {
-    pin: 'rgba(52,199,89,0.85)',
-    glow: '0 0 12px rgba(52,199,89,0.6)',
-    badge: 'bg-color-green/18 text-color-green-dark',
+    pin: 'rgba(142,142,147,0.7)',
+    glow: '0 0 8px rgba(142,142,147,0.35)',
+    badge: 'bg-[rgba(142,142,147,0.18)] text-slate-600',
     label: 'Cleared',
   }
 }
@@ -128,6 +146,7 @@ export default function LiveMapPage() {
   const mapStyle = 'mapbox://styles/mapbox/navigation-day-v1'
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null)
   const [activeFilter, setActiveFilter] = useState<LiveFilterType>('all')
+  const [statusView, setStatusView] = useState<StatusView>('active')
 
   const panelCardClass = 'live-orange-panel-glass'
   const statsCardClass = 'live-blue-stats-card'
@@ -137,19 +156,39 @@ export default function LiveMapPage() {
   const statsTextClass = 'text-white'
   const popupCardClass = 'live-blue-glass-card'
 
+  // B1: source the map from today's full set (all statuses), polling every 30s.
   const { data: incidents = [], isLoading, isError } = useQuery({
-    queryKey: ['incidents', 'live'],
-    queryFn: () => fetchIncidents({ status: 'active,expiring', today: 'true' }),
+    queryKey: ['incidents', 'today'],
+    queryFn: fetchTodayIncidents,
     refetchInterval: 30_000,
     staleTime: 20_000,
     select: (response) => (response.data ?? []).map(mapIncident),
   })
 
-  const visibleIncidents = useMemo(() => {
-    if (activeFilter === 'all') return incidents
-    return incidents.filter((incident) => incident.type === activeFilter)
-  }, [activeFilter, incidents])
+  // B4: client-side filter over the already-loaded day set — status view first,
+  // then the existing type filter. No extra fetch.
+  const statusFiltered = useMemo(
+    () =>
+      incidents.filter((incident) =>
+        statusView === 'active' ? isActiveStatus(incident.status) : incident.status === 'cleared',
+      ),
+    [incidents, statusView],
+  )
 
+  const visibleIncidents = useMemo(() => {
+    if (activeFilter === 'all') return statusFiltered
+    return statusFiltered.filter((incident) => incident.type === activeFilter)
+  }, [activeFilter, statusFiltered])
+
+  // Group counts over the full day set (independent of the type filter) so they
+  // always add up to Total Today.
+  const activeGroupCount = useMemo(
+    () => incidents.filter((incident) => isActiveStatus(incident.status)).length,
+    [incidents],
+  )
+  const clearedGroupCount = incidents.length - activeGroupCount
+
+  // "Active Now" stat = strictly active (excludes expiring), as before.
   const activeCount = useMemo(
     () => incidents.filter((incident) => incident.status === 'active').length,
     [incidents],
@@ -216,7 +255,12 @@ export default function LiveMapPage() {
                     setSelectedIncidentId(incident.id)
                   }}
                 >
-                  <IncidentPin color={statusClasses.pin} glow={statusClasses.glow} selected={selected} />
+                  <IncidentPin
+                    color={statusClasses.pin}
+                    glow={statusClasses.glow}
+                    selected={selected}
+                    dimmed={incident.status === 'cleared'}
+                  />
                 </button>
               </Marker>
             )
@@ -335,9 +379,56 @@ export default function LiveMapPage() {
               <span className="material-symbols-outlined animate-pulse text-color-red">radar</span>
               Current Incidents
             </h2>
+
+            <div
+              className="mt-3 flex rounded-full p-1"
+              style={{
+                background: 'rgba(255,255,255,0.22)',
+                border: '1px solid rgba(255,255,255,0.5)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+              }}
+            >
+              {([
+                { key: 'active', label: 'Active', count: activeGroupCount },
+                { key: 'cleared', label: 'Cleared', count: clearedGroupCount },
+              ] as Array<{ key: StatusView; label: string; count: number }>).map((view) => {
+                const isActive = statusView === view.key
+                return (
+                  <button
+                    key={view.key}
+                    type="button"
+                    aria-pressed={isActive}
+                    className="flex-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors"
+                    style={
+                      isActive
+                        ? { background: '#fff', color: '#0071e3', boxShadow: '0 2px 6px rgba(0,0,0,0.12)' }
+                        : { background: 'transparent', color: 'rgba(255,255,255,0.92)' }
+                    }
+                    onClick={() => {
+                      setStatusView(view.key)
+                      setSelectedIncidentId(NO_SELECTION)
+                    }}
+                  >
+                    {view.label} ({view.count})
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
-          <div className="flex-1 space-y-space-2 overflow-y-auto p-space-3">
+          <div
+            className="flex-1 space-y-space-2 overflow-y-auto p-space-3"
+            style={{
+              touchAction: 'pan-y',
+              overscrollBehavior: 'contain',
+              WebkitOverflowScrolling: 'touch',
+            }}
+            onTouchStart={(event) => event.stopPropagation()}
+            onTouchMove={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+            onWheel={(event) => event.stopPropagation()}
+          >
             {isLoading ? (
               <p className={`px-2 py-3 font-subheadline text-subheadline ${textClass}`}>
                 Loading incidents...
@@ -352,7 +443,9 @@ export default function LiveMapPage() {
 
             {!isLoading && !isError && !visibleIncidents.length ? (
               <p className={`px-2 py-3 font-subheadline text-subheadline ${textClass}`}>
-                No active incidents right now.
+                {statusView === 'cleared'
+                  ? 'No cleared incidents today.'
+                  : 'No active incidents right now.'}
               </p>
             ) : null}
 
