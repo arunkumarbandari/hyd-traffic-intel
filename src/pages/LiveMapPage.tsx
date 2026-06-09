@@ -373,7 +373,7 @@ export default function LiveMapPage() {
       </div>
 
       <aside className="relative z-30 mx-2 mt-2 flex max-h-[36dvh] w-auto flex-col overflow-hidden rounded-[12px] md:absolute md:bottom-[108px] md:right-space-8 md:top-[76px] md:mx-0 md:mt-0 md:max-h-none md:w-[340px]">
-        <div className={`flex h-full w-full flex-col ${panelCardClass}`}>
+        <div className={`flex h-full min-h-0 w-full flex-1 flex-col ${panelCardClass}`}>
           <div className="border-b border-black/10 p-space-4">
             <h2 className={`flex items-center gap-space-2 font-headline text-headline ${textClass}`}>
               <span className="material-symbols-outlined animate-pulse text-color-red">radar</span>
@@ -418,7 +418,7 @@ export default function LiveMapPage() {
           </div>
 
           <div
-            className="flex-1 space-y-space-2 overflow-y-auto p-space-3"
+            className="min-h-0 flex-1 space-y-space-2 overflow-y-auto p-space-3"
             style={{
               touchAction: 'pan-y',
               overscrollBehavior: 'contain',
