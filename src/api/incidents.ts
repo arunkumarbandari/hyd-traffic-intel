@@ -66,6 +66,17 @@ export const fetchIncidents = (params?: Record<string, string>) => {
   return fetch(`${BASE}/api/incidents${query}`).then((response) => parseResponse<IncidentsResponse>(response))
 }
 
+export interface TodayIncidentsResponse {
+  data: IncidentRow[]
+}
+
+// All of today's incidents (any status), IST day-scoped. Backend day boundary
+// resets this naturally at IST midnight. See /api/incidents/today (Phase A).
+export const fetchTodayIncidents = () =>
+  fetch(`${BASE}/api/incidents/today`).then((response) =>
+    parseResponse<TodayIncidentsResponse>(response),
+  )
+
 export const fetchIncident = (id: string) =>
   fetch(`${BASE}/api/incidents/${id}`).then((response) => parseResponse<IncidentRow>(response))
 
