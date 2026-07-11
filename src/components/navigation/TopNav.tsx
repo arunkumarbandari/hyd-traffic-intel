@@ -1,4 +1,4 @@
-import HydLogo from '../../components/HydLogo'
+import BrandLogo from '../../components/brand/BrandLogo'
 import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 
@@ -15,12 +15,12 @@ export default function TopNav() {
   return (
     <nav className="fixed top-0 z-50 h-16 w-full border-b-[0.5px] border-black/10 bg-white/70 shadow-[0_4px_24px_-1px_rgba(0,0,0,0.06)] backdrop-blur-[30px]">
       <div className="relative flex h-full w-full max-w-[100vw] items-center justify-between px-3 sm:px-4 md:px-8">
-        <div className="text-xl font-black tracking-tighter text-slate-900">
+        <div className="flex items-center">
           <div className="md:hidden">
-            <HydLogo width={180} />
+            <BrandLogo variant="full" size={32} />
           </div>
-          <div className="mt-2 hidden md:block">
-            <HydLogo width={300} />
+          <div className="hidden md:block">
+            <BrandLogo variant="full" size={48} />
           </div>
         </div>
 

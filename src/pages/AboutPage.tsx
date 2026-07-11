@@ -1,14 +1,19 @@
 import { useNavigate } from 'react-router-dom'
+import BrandLogo from '../components/brand/BrandLogo'
 
 const TECH_STACK = [
   { name: 'React 18', icon: 'code' },
   { name: 'TypeScript', icon: 'data_object' },
+  { name: 'Vite', icon: 'bolt' },
+  { name: 'Tailwind CSS', icon: 'palette' },
   { name: 'Mapbox GL JS', icon: 'map' },
   { name: 'TanStack Query', icon: 'sync' },
+  { name: 'Zustand', icon: 'hub' },
   { name: 'Node.js + Express', icon: 'dns' },
   { name: 'Supabase', icon: 'database' },
-  { name: 'Baileys', icon: 'chat' },
-  { name: 'Groq (Llama 3.1)', icon: 'smart_toy' },
+  { name: 'whatsapp-web.js', icon: 'chat' },
+  { name: 'Gemini 2.5 Flash', icon: 'smart_toy' },
+  { name: 'Google Geocoding API', icon: 'neurology' },
   { name: 'Railway', icon: 'cloud' },
   { name: 'Vercel', icon: 'rocket_launch' },
 ]
@@ -16,8 +21,8 @@ const TECH_STACK = [
 const CONTACT_LINKS = [
   {
     label: 'Email',
-    value: 'arunkumarbandari@gmail.com',
-    href: 'mailto:arunkumarbandari@gmail.com',
+    value: 'arunkumarbandari309@gmail.com',
+    href: 'mailto:arunkumarbandari309@gmail.com',
     icon: 'mail',
   },
   {
@@ -58,6 +63,9 @@ export default function AboutPage() {
         </button>
 
         <header className="mb-space-6">
+          <div className="mb-space-4">
+            <BrandLogo variant="full" size={56} />
+          </div>
           <h1 className="font-large-title text-large-title tracking-tight text-label-primary">
             About Hyd Traffic Intel
           </h1>
@@ -128,6 +136,23 @@ export default function AboutPage() {
                 </div>
               ))}
             </div>
+          </section>
+
+          <section className={cardClass}>
+            <h2 className="mb-space-3 flex items-center gap-2 font-headline text-headline text-label-primary">
+              <span className="material-symbols-outlined text-[20px] text-primary">auto_awesome</span>
+              Design Language
+            </h2>
+            <p className="font-subheadline text-subheadline leading-relaxed text-label-secondary">
+              The interface is built on a{' '}
+              <span className="font-semibold text-label-primary">glassmorphism</span> design
+              language — frosted, translucent surfaces with real depth, soft light, and blur.
+              It draws directly from{' '}
+              <span className="font-semibold text-label-primary">macOS 26</span> and Apple&apos;s
+              Human Interface Guidelines, so every panel, control, and card is{' '}
+              <span className="font-semibold text-label-primary">Apple-coded</span>: clarity,
+              deference, and depth, with motion and materials that stay out of the way of the data.
+            </p>
           </section>
 
           <section className={cardClass}>
