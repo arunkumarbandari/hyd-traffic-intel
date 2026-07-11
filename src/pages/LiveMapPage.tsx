@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import Map, { Marker, Popup } from 'react-map-gl/mapbox'
-import { fetchTodayIncidents, type IncidentRow, type IncidentStatus, type IncidentType } from '../api/incidents'
+import { fetchIncidents, fetchTodayIncidents, type IncidentRow, type IncidentStatus, type IncidentType } from '../api/incidents'
+import { formatDateValue, toEndIso, toStartIso } from '../utils/date'
+import GlassDatePicker from '../components/calendar/GlassDatePicker'
 
 type Incident = {
   id: string
@@ -18,7 +20,7 @@ type Incident = {
 }
 
 type LiveFilterType = 'all' | IncidentType
-type StatusView = 'active' | 'cleared'
+type StatusView = 'active' | 'cleared' | 'calendar'
 
 const FILTER_OPTIONS: Array<{ key: LiveFilterType; label: string; icon: string }> = [
   { key: 'all', label: 'All Incidents', icon: 'emergency' },
@@ -108,11 +110,11 @@ function getStatusClasses(status: IncidentStatus) {
     }
   }
 
-  // Cleared: de-emphasized gray (design-system `cleared` token), muted glow.
+  // Cleared: hard iOS green, matching HistoryPage.
   return {
-    pin: 'rgba(142,142,147,0.7)',
-    glow: '0 0 8px rgba(142,142,147,0.35)',
-    badge: 'bg-[rgba(142,142,147,0.18)] text-slate-600',
+    pin: '#34C759',
+    glow: '0 0 18px #34C759',
+    badge: 'bg-color-green/10 text-color-green-dark',
     label: 'Cleared',
   }
 }
@@ -147,6 +149,8 @@ export default function LiveMapPage() {
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null)
   const [activeFilter, setActiveFilter] = useState<LiveFilterType>('all')
   const [statusView, setStatusView] = useState<StatusView>('active')
+  const [calendarDate, setCalendarDate] = useState<Date>(new Date())
+  const [calendarPickerOpen, setCalendarPickerOpen] = useState(false)
 
   const panelCardClass = 'live-orange-panel-glass'
   const statsCardClass = 'live-blue-stats-card'
@@ -165,6 +169,20 @@ export default function LiveMapPage() {
     select: (response) => (response.data ?? []).map(mapIncident),
   })
 
+  // Calendar mode: fetch cleared incidents for the selected date.
+  const { data: calendarIncidents = [], isLoading: calendarLoading, isError: calendarError } = useQuery({
+    queryKey: ['incidents', 'by-date', formatDateValue(calendarDate)],
+    queryFn: () =>
+      fetchIncidents({
+        from: toStartIso(formatDateValue(calendarDate)),
+        to: toEndIso(formatDateValue(calendarDate)),
+        limit: '200',
+      }),
+    enabled: statusView === 'calendar',
+    select: (response) => response.data.map(mapIncident).filter((incident) => incident.status === 'cleared'),
+    staleTime: 60_000,
+  })
+
   // B4: client-side filter over the already-loaded day set — status view first,
   // then the existing type filter. No extra fetch.
   const statusFiltered = useMemo(
@@ -175,10 +193,12 @@ export default function LiveMapPage() {
     [incidents, statusView],
   )
 
+  const activeSourceIncidents = statusView === 'calendar' ? calendarIncidents : statusFiltered
+
   const visibleIncidents = useMemo(() => {
-    if (activeFilter === 'all') return statusFiltered
-    return statusFiltered.filter((incident) => incident.type === activeFilter)
-  }, [activeFilter, statusFiltered])
+    if (activeFilter === 'all') return activeSourceIncidents
+    return activeSourceIncidents.filter((incident) => incident.type === activeFilter)
+  }, [activeFilter, activeSourceIncidents])
 
   // Group counts over the full day set (independent of the type filter) so they
   // always add up to Total Today.
@@ -259,7 +279,7 @@ export default function LiveMapPage() {
                     color={statusClasses.pin}
                     glow={statusClasses.glow}
                     selected={selected}
-                    dimmed={incident.status === 'cleared'}
+                    dimmed={false}
                   />
                 </button>
               </Marker>
@@ -392,14 +412,15 @@ export default function LiveMapPage() {
               {([
                 { key: 'active', label: 'Active', count: activeGroupCount },
                 { key: 'cleared', label: 'Cleared', count: clearedGroupCount },
-              ] as Array<{ key: StatusView; label: string; count: number }>).map((view) => {
+                { key: 'calendar', label: 'Calendar', count: undefined as unknown as number, icon: 'calendar_month' },
+              ] as Array<{ key: StatusView; label: string; count: number; icon?: string }>).map((view) => {
                 const isActive = statusView === view.key
                 return (
                   <button
                     key={view.key}
                     type="button"
                     aria-pressed={isActive}
-                    className="flex-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors"
+                    className="flex flex-1 items-center justify-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors"
                     style={
                       isActive
                         ? { background: '#fff', color: '#0071e3', boxShadow: '0 2px 6px rgba(0,0,0,0.12)' }
@@ -410,12 +431,68 @@ export default function LiveMapPage() {
                       setSelectedIncidentId(NO_SELECTION)
                     }}
                   >
-                    {view.label} ({view.count})
+                    {view.icon ? (
+                      <span className="material-symbols-outlined text-[14px]" style={{ color: 'inherit' }}>
+                        {view.icon}
+                      </span>
+                    ) : null}
+                    {view.label}
+                    {view.count !== undefined ? ` (${view.count})` : ''}
                   </button>
                 )
               })}
             </div>
           </div>
+
+          {statusView === 'calendar' ? (
+            <div className="border-b border-black/10 px-space-3 py-space-2">
+              <div className="mb-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white/60 text-white backdrop-blur-sm hover:bg-white/80"
+                  onClick={() => setCalendarDate((d) => {
+                    const next = new Date(d)
+                    next.setDate(next.getDate() - 1)
+                    return next
+                  })}
+                >
+                  <span className="material-symbols-outlined text-[18px]">chevron_left</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex-1 rounded-full bg-white/40 py-1.5 text-center text-[12px] font-semibold text-white backdrop-blur-sm"
+                  onClick={() => setCalendarPickerOpen((o) => !o)}
+                >
+                  {calendarDate.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' })}
+                </button>
+                <button
+                  type="button"
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white/60 text-white backdrop-blur-sm hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={calendarDate.toDateString() === new Date().toDateString()}
+                  onClick={() => setCalendarDate((d) => {
+                    const next = new Date(d)
+                    next.setDate(next.getDate() + 1)
+                    return next
+                  })}
+                >
+                  <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+                </button>
+              </div>
+              {calendarPickerOpen ? (
+                <div className="mt-2 overflow-hidden rounded-xl border border-white/50 bg-white/80 p-2 shadow-lg backdrop-blur-xl">
+                  <GlassDatePicker
+                    selected={calendarDate}
+                    onSelect={(d) => {
+                      if (d) {
+                        setCalendarDate(d)
+                        setCalendarPickerOpen(false)
+                      }
+                    }}
+                  />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           <div
             className="min-h-0 flex-1 space-y-space-2 overflow-y-auto p-space-3"
@@ -429,25 +506,45 @@ export default function LiveMapPage() {
             onPointerDown={(event) => event.stopPropagation()}
             onWheel={(event) => event.stopPropagation()}
           >
-            {isLoading ? (
-              <p className={`px-2 py-3 font-subheadline text-subheadline ${textClass}`}>
-                Loading incidents...
-              </p>
-            ) : null}
+            {(() => {
+              const isCalendar = statusView === 'calendar'
+              const loading = isCalendar ? calendarLoading : isLoading
+              const errored = isCalendar ? calendarError : isError
+              const dateLabel = calendarDate.toLocaleDateString(undefined, {
+                month: 'short',
+                day: '2-digit',
+                year: 'numeric',
+              })
 
-            {isError ? (
-              <p className={`px-2 py-3 font-subheadline text-subheadline ${textClass}`}>
-                Failed to load. Is the API running?
-              </p>
-            ) : null}
-
-            {!isLoading && !isError && !visibleIncidents.length ? (
-              <p className={`px-2 py-3 font-subheadline text-subheadline ${textClass}`}>
-                {statusView === 'cleared'
-                  ? 'No cleared incidents today.'
-                  : 'No active incidents right now.'}
-              </p>
-            ) : null}
+              if (loading) {
+                return (
+                  <p className={`px-2 py-3 font-subheadline text-subheadline ${textClass}`}>
+                    {isCalendar
+                      ? `Loading incidents for ${dateLabel}...`
+                      : 'Loading incidents...'}
+                  </p>
+                )
+              }
+              if (errored) {
+                return (
+                  <p className={`px-2 py-3 font-subheadline text-subheadline ${textClass}`}>
+                    Failed to load. Is the API running?
+                  </p>
+                )
+              }
+              if (!visibleIncidents.length) {
+                return (
+                  <p className={`px-2 py-3 font-subheadline text-subheadline ${textClass}`}>
+                    {isCalendar
+                      ? `No cleared incidents on ${dateLabel}.`
+                      : statusView === 'cleared'
+                        ? 'No cleared incidents today.'
+                        : 'No active incidents right now.'}
+                  </p>
+                )
+              }
+              return null
+            })()}
 
             {!isLoading &&
               !isError &&
@@ -472,7 +569,7 @@ export default function LiveMapPage() {
                           ? 'bg-color-red'
                           : incident.status === 'expiring'
                             ? 'bg-color-orange'
-                            : 'bg-slate-500'
+                            : 'bg-color-green'
                       }`}
                     />
                     <div className="mb-2 flex items-start justify-between pl-2">

@@ -8,49 +8,18 @@ import {
 } from 'react-day-picker'
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import 'react-day-picker/style.css'
+import { useNavigate } from 'react-router-dom'
 import { fetchIncidents, type IncidentRow, type IncidentStatus, type IncidentType } from '../api/incidents'
-
-function formatStatusLabel(status: IncidentStatus) {
-  if (status === 'active') return 'Active'
-  if (status === 'expiring') return 'Expiring'
-  return 'Cleared'
-}
-
-function getStatusClasses(status: IncidentStatus) {
-  if (status === 'cleared') {
-    return 'bg-color-green/10 text-color-green-dark border-color-green/20'
-  }
-
-  if (status === 'expiring') {
-    return 'bg-color-orange/12 text-color-orange border-color-orange/25'
-  }
-
-  return 'bg-color-red/10 text-color-red border-color-red/20'
-}
-
-function getTypeLabel(type: IncidentType) {
-  if (type === 'accident') return 'Accident'
-  if (type === 'congestion') return 'Congestion'
-  if (type === 'roadwork') return 'Roadwork'
-  if (type === 'other') return 'Other'
-  return 'Breakdown'
-}
-
-function getTypeIcon(type: IncidentType) {
-  if (type === 'accident') return 'car_crash'
-  if (type === 'congestion') return 'traffic'
-  if (type === 'roadwork') return 'construction'
-  if (type === 'other') return 'report'
-  return 'build'
-}
-
-function getTypeIconColor(type: IncidentType) {
-  if (type === 'accident') return 'text-color-orange'
-  if (type === 'congestion') return 'text-color-red'
-  if (type === 'roadwork') return 'text-primary'
-  if (type === 'other') return 'text-color-purple'
-  return 'text-color-teal'
-}
+import {
+  formatStatusLabel,
+  getStatusClasses,
+  getTypeLabel,
+  getTypeIcon,
+  getTypeIconColor,
+  IncidentDetailBody,
+  IncidentDetailHeader,
+} from '../components/history/IncidentDetail'
+import { useIsDesktop } from '../hooks/useIsDesktop'
 
 function getDurationText(startIso: string, endIso: string) {
   const start = new Date(startIso).getTime()
@@ -214,6 +183,8 @@ function CalendarGlassDropdown({
 }
 
 export default function HistoryPage() {
+  const isDesktop = useIsDesktop()
+  const navigate = useNavigate()
   const calendarClassNames = useMemo(
     () => ({
       [UI.MonthCaption]: 'flex items-center justify-between px-1',
@@ -569,7 +540,12 @@ export default function HistoryPage() {
                         ? 'border border-primary/20 bg-glass-fill-light shadow-sm backdrop-blur-[30px]'
                         : 'border border-transparent bg-glass-fill-light backdrop-blur-[30px] hover:border-outline-variant/30 hover:bg-surface-container-low'
                     }`}
-                    onClick={() => setSelectedIncidentId(row.id)}
+                    onClick={() => {
+                      setSelectedIncidentId(row.id)
+                      if (!isDesktop) {
+                        navigate(`/history/${row.id}`)
+                      }
+                    }}
                   >
                     <div className="col-span-4 flex flex-col gap-1">
                       <span className="truncate font-headline text-headline text-label-primary">
@@ -633,123 +609,16 @@ export default function HistoryPage() {
           <div className="relative flex h-full w-full flex-col overflow-hidden rounded-[28px] border border-white/60 bg-glass-fill-light shadow-[0_24px_60px_-12px_rgba(0,0,0,0.15)] backdrop-blur-[30px]">
             <div className="pointer-events-none absolute inset-0 z-20 rounded-[28px] border-t border-white/80" />
 
-            <div className="z-10 flex items-start justify-between bg-gradient-to-b from-white/50 to-transparent px-space-6 pb-space-4 pt-space-6">
-              <div>
-                <div className="mb-1 flex items-center gap-2">
-                  <span className="rounded bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
-                    ID: {selectedIncident?.id ?? '—'}
-                  </span>
-                  <span
-                    className={`inline-flex items-center rounded-full border px-2 py-0.5 font-caption-2 text-caption-2 font-medium ${
-                      selectedIncident ? getStatusClasses(selectedIncident.status) : 'border-outline-variant/50 text-label-secondary'
-                    }`}
-                  >
-                    {selectedIncident ? formatStatusLabel(selectedIncident.status) : '—'}
-                  </span>
-                </div>
-                <h2 className="mt-1 font-title-2 text-title-2 leading-tight text-label-primary">
-                  {selectedIncident?.location_name ?? 'Select an incident'}
-                </h2>
-                <p className="mt-1 font-subheadline text-subheadline text-label-secondary">
-                  {selectedIncident ? new Date(selectedIncident.reported_at).toLocaleString() : '—'}
-                </p>
-              </div>
+            <IncidentDetailHeader
+              incident={selectedIncident}
+              onDismiss={() => setSelectedIncidentId(NO_SELECTION)}
+              dismissIcon="close"
+            />
 
-              <button
-                type="button"
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-container text-label-secondary transition-colors hover:bg-surface-variant"
-                onClick={() => setSelectedIncidentId(NO_SELECTION)}
-              >
-                <span className="material-symbols-outlined text-[20px]">close</span>
-              </button>
-            </div>
-
-            <div className="z-10 flex flex-1 flex-col gap-space-6 overflow-y-auto px-space-6 pb-space-6">
-              <div className="space-y-space-3">
-                <h3 className="flex items-center gap-2 font-headline text-headline text-label-primary">
-                  <span className="material-symbols-outlined text-[18px] text-color-green">
-                    forum
-                  </span>
-                  Source Intelligence
-                </h3>
-
-                <div className="relative inline-block max-w-[90%] rounded-[16px] rounded-tl-none border border-black/5 bg-[#e1ffd4] p-space-4 text-label-primary shadow-sm">
-                  <p className="font-body text-body leading-relaxed">
-                    {selectedIncident?.raw_message ?? '—'}
-                  </p>
-                  <div className="mt-2 flex items-center justify-between font-caption-2 text-caption-2 text-label-secondary">
-                    <span>~ {selectedIncident?.source ?? '—'}</span>
-                    <span>
-                      {selectedIncident ? new Date(selectedIncident.reported_at).toLocaleString() : '—'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-space-3">
-                <h3 className="flex items-center gap-2 font-headline text-headline text-label-primary">
-                  <span className="material-symbols-outlined text-[18px] text-color-blue-dark">
-                    photo_camera
-                  </span>
-                  Visual Evidence
-                </h3>
-
-                {selectedIncident?.photo_url ? (
-                  <div
-                    className="group relative cursor-pointer overflow-hidden rounded-xl border border-outline-variant/30 shadow-sm"
-                    onClick={() => setLightboxOpen(true)}
-                  >
-                    <img
-                      alt="Traffic incident evidence"
-                      className="h-[180px] w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                      src={selectedIncident.photo_url}
-                    />
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/10">
-                      <span className="material-symbols-outlined text-[32px] text-white opacity-0 drop-shadow-md transition-opacity group-hover:opacity-100">
-                        zoom_in
-                      </span>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="space-y-space-2 rounded-xl border border-outline-variant/30 bg-white/40 p-space-4">
-                <p className="font-subheadline text-subheadline text-label-primary">
-                  <span className="font-semibold">Clean message:</span> {selectedIncident?.clean_message ?? '—'}
-                </p>
-                <p className="font-subheadline text-subheadline text-label-primary">
-                  <span className="font-semibold">Type:</span>{' '}
-                  {selectedIncident ? getTypeLabel(selectedIncident.incident_type) : '—'}
-                </p>
-                <p className="font-subheadline text-subheadline text-label-primary">
-                  <span className="font-semibold">Status:</span>{' '}
-                  {selectedIncident ? formatStatusLabel(selectedIncident.status) : '—'}
-                </p>
-                <p className="font-subheadline text-subheadline text-label-primary">
-                  <span className="font-semibold">Reported at:</span>{' '}
-                  {selectedIncident ? new Date(selectedIncident.reported_at).toLocaleString() : '—'}
-                </p>
-                <p className="font-subheadline text-subheadline text-label-primary">
-                  <span className="font-semibold">Expires at:</span>{' '}
-                  {selectedIncident ? new Date(selectedIncident.expires_at).toLocaleString() : '—'}
-                </p>
-                <p className="font-subheadline text-subheadline text-label-primary">
-                  <span className="font-semibold">Estimated delay:</span>{' '}
-                  {selectedIncident ? `${selectedIncident.estimated_minutes} min` : '—'}
-                </p>
-                <div className="flex items-center gap-2">
-                  <span className="font-subheadline text-subheadline font-semibold text-label-primary">
-                    Parsed by:
-                  </span>
-                  <span className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 font-caption-2 text-caption-2 font-medium text-primary">
-                    {selectedIncident?.parsed_by ?? '—'}
-                  </span>
-                </div>
-                <p className="font-subheadline text-subheadline text-label-primary">
-                  <span className="font-semibold">Source:</span> {selectedIncident?.source ?? '—'}
-                </p>
-              </div>
-            </div>
+            <IncidentDetailBody
+              incident={selectedIncident}
+              onPhotoClick={() => setLightboxOpen(true)}
+            />
           </div>
         </section>
       </main>

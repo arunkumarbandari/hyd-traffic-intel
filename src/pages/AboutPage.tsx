@@ -4,13 +4,16 @@ import BrandLogo from '../components/brand/BrandLogo'
 const TECH_STACK = [
   { name: 'React 18', icon: 'code' },
   { name: 'TypeScript', icon: 'data_object' },
+  { name: 'Vite', icon: 'bolt' },
+  { name: 'Tailwind CSS', icon: 'palette' },
   { name: 'Mapbox GL JS', icon: 'map' },
   { name: 'TanStack Query', icon: 'sync' },
+  { name: 'Zustand', icon: 'hub' },
   { name: 'Node.js + Express', icon: 'dns' },
   { name: 'Supabase', icon: 'database' },
   { name: 'whatsapp-web.js', icon: 'chat' },
-  { name: 'Groq (Llama 3.1)', icon: 'smart_toy' },
-  { name: 'Ola Krutrim', icon: 'neurology' },
+  { name: 'Gemini 2.5 Flash', icon: 'smart_toy' },
+  { name: 'Google Geocoding API', icon: 'neurology' },
   { name: 'Railway', icon: 'cloud' },
   { name: 'Vercel', icon: 'rocket_launch' },
 ]
