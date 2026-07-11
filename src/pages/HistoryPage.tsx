@@ -9,7 +9,7 @@ import {
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import 'react-day-picker/style.css'
 import { useNavigate } from 'react-router-dom'
-import { fetchIncidents, type IncidentRow, type IncidentStatus, type IncidentType } from '../api/incidents'
+import { fetchIncidents, type IncidentRow } from '../api/incidents'
 import {
   formatStatusLabel,
   getStatusClasses,
@@ -610,13 +610,13 @@ export default function HistoryPage() {
             <div className="pointer-events-none absolute inset-0 z-20 rounded-[28px] border-t border-white/80" />
 
             <IncidentDetailHeader
-              incident={selectedIncident}
+              incident={selectedIncident ?? undefined}
               onDismiss={() => setSelectedIncidentId(NO_SELECTION)}
               dismissIcon="close"
             />
 
             <IncidentDetailBody
-              incident={selectedIncident}
+              incident={selectedIncident ?? undefined}
               onPhotoClick={() => setLightboxOpen(true)}
             />
           </div>
