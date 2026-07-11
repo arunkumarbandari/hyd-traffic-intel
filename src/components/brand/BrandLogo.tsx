@@ -42,10 +42,12 @@ export default function BrandLogo({ variant, size = 40, className }: BrandLogoPr
   return (
     <span
       className={className}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: size * 0.24 }}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: size * 0.28 }}
     >
       <img src="/logo.svg" alt="" aria-hidden="true" draggable={false} style={iconStyle} />
-      <Wordmark height={size * 0.62} />
+      <span style={{ display: 'inline-block', marginTop: size * 0.04 }}>
+        <Wordmark height={size * 0.62} />
+      </span>
     </span>
   )
 }

@@ -17,7 +17,7 @@ export default function TopNav() {
       <div className="relative flex h-full w-full max-w-[100vw] items-center justify-between px-3 sm:px-4 md:px-8">
         <div className="flex items-center">
           <div className="md:hidden">
-            <BrandLogo variant="icon" size={40} />
+            <BrandLogo variant="full" size={32} />
           </div>
           <div className="hidden md:block">
             <BrandLogo variant="full" size={48} />

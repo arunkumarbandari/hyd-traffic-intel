@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import TopNav from './components/navigation/TopNav'
 import AboutPage from './pages/AboutPage'
+import HistoryDetailPage from './pages/HistoryDetailPage'
 import HistoryPage from './pages/HistoryPage'
 import IntelligencePage from './pages/IntelligencePage'
 import LiveMapPage from './pages/LiveMapPage'
@@ -14,6 +15,7 @@ function App() {
         <Route path="/live-map" element={<LiveMapPage />} />
         <Route path="/intelligence" element={<IntelligencePage />} />
         <Route path="/history" element={<HistoryPage />} />
+        <Route path="/history/:id" element={<HistoryDetailPage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="*" element={<Navigate to="/live-map" replace />} />
       </Routes>
